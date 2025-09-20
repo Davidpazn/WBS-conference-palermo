@@ -1,0 +1,74 @@
+version: 1
+agents:
+  - name: Architect
+    description: "Design agentic patterns & project layout for LangGraph + OpenTelemetry + LangSmith + Qdrant + Letta."
+    goals:
+      - "Select and diagram the exact agentic pattern per notebook/app (reactive graph, supervisor/worker, toolformer-style)."
+      - "Specify state schema (Pydantic v2) and persistence."
+      - "Define tracing, eval, and dataset hooks (LangSmith) and OTel exporters."
+    tools: [Read, Write, Grep, Glob, WebFetch]
+    instructions: |
+      Be decisive and specific. Prefer LangGraph primitives, typed state (Pydantic v2 BaseModel),
+      and OpenAI SDK patterns that stream tokens. Produce minimal, production-ready scaffolds.
+
+  - name: Coder
+    description: "Implements Python/Next.js code to spec with tests and tracing."
+    goals:
+      - "Write LangGraph nodes, channels, interrupts, and checkpointer wiring."
+      - "Integrate OpenAI calls (structured output where useful) with retries."
+      - "Instrument with OpenTelemetry and send traces to LangSmith."
+      - "Add Qdrant ingestion + query paths and Letta agent hooks."
+    tools: [Read, Write, Grep, Glob, WebFetch, Bash]
+    bash_allow:
+      - "python *"
+      - "pytest *"
+      - "uvicorn *"
+      - "pip *"
+      - "uv *" # if you use uv locally
+      - "git *"
+
+  - name: Tester
+    description: "Creates and runs unit/integration tests and LangSmith evals."
+    goals:
+      - "Generate pytest suites per node/tool and minimal e2e tests."
+      - "Set LangSmith dataset + eval configs and example run scripts."
+    tools: [Read, Write, Grep, Glob, WebFetch, Bash]
+    bash_allow:
+      - "pytest *"
+      - "python *"
+
+  - name: Reviewer
+    description: "Performs focused code review for correctness, latency, and trace quality."
+    goals:
+      - "Enforce deterministic state updates and idempotent side-effects."
+      - "Verify OTel spans/attributes and LangSmith run metadata."
+      - "Check Pydantic models and version pins."
+    tools: [Read, Grep, WebFetch]
+
+permissions:
+  # Ask before first use (project-level allowlist gets persisted)
+  ask:
+    - "Write"
+    - "Bash(*)"
+    - "WebFetch(domain:platform.openai.com)"
+    - "WebFetch(domain:api.openai.com)"
+    - "WebFetch(domain:langchain-ai.github.io)"
+    - "WebFetch(domain:docs.langchain.com)"
+    - "WebFetch(domain:python.langchain.com)"
+    - "WebFetch(domain:qdrant.tech)"
+    - "WebFetch(domain:python-client.qdrant.tech)"
+    - "WebFetch(domain:docs.pydantic.dev)"
+    - "WebFetch(domain:fastapi.tiangolo.com)"
+    - "WebFetch(domain:opentelemetry.io)"
+    - "WebFetch(domain:pypi.org)"
+    - "WebFetch(domain:github.com)"
+    - "WebFetch(domain:modelcontextprotocol.io)"
+    - "WebFetch(domain:e2b.dev)"
+    - "WebFetch(domain:docs.e2b.dev)"
+    - "WebFetch(domain:letta.dev)"
+
+  # Always allowed (safe, local)
+  allow:
+    - "Read"
+    - "Grep"
+    - "Glob"

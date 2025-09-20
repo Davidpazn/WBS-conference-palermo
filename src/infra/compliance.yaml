@@ -1,0 +1,238 @@
+# Compliance Gate Configuration for AI Agent Flows
+# Maps to NB3-compliance.txt specification
+
+version: "1.0"
+service_name: "agents-backend"
+
+# A) Model & Cost Controls (deterministic)
+model_controls:
+  CMP-MOD-001:
+    name: "model_allowlist"
+    action: "BLOCK"
+    description: "Only approved models allowed"
+    allowed_models:
+      - "gpt-5-nano"
+      - "gpt-5-mini"
+
+  CMP-MOD-002:
+    name: "token_limits"
+    action: "BLOCK"
+    description: "Token usage within limits"
+    max_input_tokens: 50000
+    max_output_tokens: 16000
+
+  CMP-MOD-003:
+    name: "cost_budget"
+    action: "BLOCK"
+    description: "Cost per run within budget"
+    max_cost_eur: 2.50
+
+  CMP-MOD-004:
+    name: "temperature_bound"
+    action: "WARN"
+    description: "Temperature limits for finalize nodes"
+    min_temperature: 0.0
+    max_temperature: 0.7
+    applies_to_nodes: ["finalize", "observe"]
+
+# B) Tool & Network Safety
+tool_safety:
+  CMP-TOOL-001:
+    name: "domain_allowlist"
+    action: "BLOCK"
+    description: "WebFetch/HTTP calls to allowed domains only"
+    allowed_domains:
+      - "docs.pydantic.dev"
+      - "platform.openai.com"
+      - "fastapi.tiangolo.com"
+      - "opentelemetry.io"
+      - "docs.langchain.com"
+      - "qdrant.tech"
+      - "docs.letta.com"
+      - "e2b.dev"
+      - "modelcontextprotocol.io"
+      - "nextjs.org"
+      - "langchain-ai.github.io"
+      - "python-client.qdrant.tech"
+      - "opentelemetry-python.readthedocs.io"
+      - "docs.smith.langchain.com"
+      - "github.com"
+
+  CMP-TOOL-002:
+    name: "shell_command_denylist"
+    action: "BLOCK"
+    description: "Dangerous shell commands blocked"
+    denied_substrings:
+      - "rm -rf"
+      - "mkfs"
+      - "netcat"
+      - "ssh "
+      - "curl file://"
+      - "wget file://"
+      - "sudo"
+      - "chmod +x"
+
+  CMP-TOOL-003:
+    name: "file_write_scope"
+    action: "BLOCK"
+    description: "File writes only in safe paths"
+    allowed_paths:
+      - "/tmp/"
+      - "/var/tmp/"
+      - "./temp/"
+      - "./sandbox/"
+      - "./backend/"
+      - "./frontend/"
+      - "./notebooks/"
+    denied_paths:
+      - "/etc/"
+      - "/usr/"
+      - "/home/*/.ssh/"
+      - "/home/*/.aws/"
+      - "/home/*/.config/"
+
+  CMP-TOOL-004:
+    name: "e2b_isolation"
+    action: "WARN"
+    description: "Code execution in E2B sandbox only"
+    required_sandbox: "e2b"
+
+# C) Memory & Privacy (Letta)
+memory_privacy:
+  CMP-MEM-001:
+    name: "field_allowlist"
+    action: "WARN"
+    description: "Memory saves only allowed fields"
+    allowed_fields:
+      - "user_query"
+      - "result"
+      - "summary"
+      - "tags"
+
+  CMP-MEM-002:
+    name: "pii_patterns"
+    action: "BLOCK"
+    description: "No PII in memory content"
+    pii_regexes:
+      - '\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b' # Email
+      - '\b\d{3}-\d{2}-\d{4}\b' # SSN
+      - '\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b' # Credit card
+      - '\b[A-Z]{2}\d{2}[\s]?\d{4}[\s]?\d{4}[\s]?\d{4}[\s]?\d{4}[\s]?\d{2}\b' # IBAN
+      - '\b\+?1?[\s-]?\(?[0-9]{3}\)?[\s-]?[0-9]{3}[\s-]?[0-9]{4}\b' # Phone
+
+  CMP-MEM-003:
+    name: "secret_leakage"
+    action: "BLOCK"
+    description: "No secrets in memory"
+    secret_patterns:
+      - "sk-[A-Za-z0-9]+" # OpenAI keys
+      - "ls-[A-Za-z0-9]+" # LangSmith keys
+      - "e2b_[A-Za-z0-9]+" # E2B keys
+      - "qdrant_[A-Za-z0-9]+" # Qdrant keys
+      - 'eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*' # JWT
+      - "AKIA[0-9A-Z]{16}" # AWS access key
+      - "xoxb-[0-9]+-[0-9]+-[0-9A-Za-z]+" # Slack bot token
+
+  CMP-MEM-004:
+    name: "size_ttl"
+    action: "WARN"
+    description: "Memory item size and TTL limits"
+    max_item_bytes: 8192
+    default_ttl_hours: 24
+
+# D) Output/Claims Quality
+output_quality:
+  CMP-OUT-001:
+    name: "required_disclaimer"
+    action: "FIX"
+    description: "Auto-insert disclaimer for financial content"
+    trigger_keywords:
+      - "trades"
+      - "portfolio"
+      - "rebalance"
+      - "investment"
+      - "financial"
+    disclaimer: "⚠️ This is a demo output for educational purposes only. Not financial advice."
+
+  CMP-OUT-002:
+    name: "banned_phrases"
+    action: "BLOCK"
+    description: "Reject dangerous financial claims"
+    banned_phrases:
+      - "guaranteed returns"
+      - "zero risk"
+      - "inside information"
+      - "risk-free profit"
+      - "sure thing"
+      - "can't lose"
+
+  CMP-OUT-003:
+    name: "citations_on_facts"
+    action: "WARN"
+    description: "External facts should have citations"
+    citation_patterns:
+      - 'https?://[^\s]+'
+      - '\[.*\]'
+      - "Source:"
+      - "According to"
+
+  CMP-OUT-004:
+    name: "toxicity_sensitive"
+    action: "WARN"
+    description: "Basic toxicity screening"
+    toxic_patterns:
+      - '\b(hate|attack|kill|destroy)\b.*\b(people|person|group)\b'
+      - '\b(stupid|idiot|moron)\b'
+      - '\b(racist|sexist|homophobic)\b'
+
+# E) Trading-Specific Constraints
+trading_constraints:
+  CMP-TRD-001:
+    name: "max_single_asset_weight"
+    action: "BLOCK"
+    description: "No single asset exceeds weight limit"
+    max_single_asset_weight: 0.25 # 25%
+
+  CMP-TRD-002:
+    name: "min_cash"
+    action: "BLOCK"
+    description: "Minimum cash position required"
+    min_cash_weight: 0.05 # 5%
+
+  CMP-TRD-003:
+    name: "prohibited_assets"
+    action: "BLOCK"
+    description: "No trades in prohibited assets"
+    prohibited_assets:
+      - "CRYPTO"
+      - "PENNY"
+      - "OTC"
+      - "SPAC"
+
+  CMP-TRD-004:
+    name: "leverage_shorting"
+    action: "BLOCK"
+    description: "Leverage and shorting controls"
+    max_total_weight: 1.0
+    allow_shorting: false
+
+  CMP-TRD-005:
+    name: "turnover_cap"
+    action: "BLOCK"
+    description: "Maximum portfolio turnover"
+    max_turnover: 0.50 # 50%
+
+  CMP-TRD-006:
+    name: "lot_size_precision"
+    action: "BLOCK"
+    description: "Trade size and precision limits"
+    min_lot_size: 1
+    max_decimals: 6
+
+# Global settings
+global_settings:
+  enabled: true
+  log_violations: true
+  log_level: "INFO"
+  fail_fast: false # Continue checking all rules even after first violation
+  redaction_char: "*"

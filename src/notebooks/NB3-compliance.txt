@@ -1,0 +1,66 @@
+What the NB3 Compliance Gate checks
+A) Model & cost controls (deterministic)
+
+CMP-MOD-001 (allowlist): state.meta.model ∈ { "gpt-4.1-mini", "o4-mini", "o4-mini-high", "gpt-4o-mini" }.
+
+CMP-MOD-002 (token limits): input_tokens ≤ max_input_tokens, output_tokens ≤ max_output_tokens.
+
+CMP-MOD-003 (cost budget): state.cost ≤ max_cost_eur per run (use your cost estimator).
+
+CMP-MOD-004 (temperature bound): 0.0 ≤ temperature ≤ 0.7 for “finalize” nodes.
+
+Action: BLOCK on 001/002/003, WARN on 004.
+
+B) Tool & network safety
+
+CMP-TOOL-001 (domain allowlist): all WebFetch/HTTP calls must target allowed_domains (exact host match).
+
+CMP-TOOL-002 (shell command denylist): no substrings from ["rm -rf", "mkfs", "netcat", "ssh ", "curl file://"].
+
+CMP-TOOL-003 (file write scope): writes only under project temp/sandbox paths (no /etc, home dotfiles).
+
+CMP-TOOL-004 (E2B isolation): if code was executed, ensure meta.sandbox=="e2b" and no “local exec” flags.
+
+Action: BLOCK on 001/002/003, WARN on 004.
+
+C) Memory & privacy (Letta)
+
+CMP-MEM-001 (field allowlist): memory saves only keys in ["user_query","result","summary","tags"].
+
+CMP-MEM-002 (PII patterns): memory content must not match PII regexes (emails, phones, IBAN, card numbers).
+
+CMP-MEM-003 (secret leakage): forbid strings matching sk-_\*, ls-_+, cloud keys, JWT-like patterns.
+
+CMP-MEM-004 (size/TTL): per-item bytes ≤ max_item_bytes; TTL present if configured.
+
+Action: BLOCK on 002/003, WARN on 001/004 (and redact before saving).
+
+D) Output/claims quality (final text response)
+
+CMP-OUT-001 (required disclaimer): prepend a short, repo-provided disclaimer when output contains “trades”, “portfolio”, “rebalance”.
+
+CMP-OUT-002 (banned phrases): reject “guaranteed returns”, “zero risk”, “inside information”.
+
+CMP-OUT-003 (citations on facts): if the answer cites external facts and state.meta.requires_citations==true, ensure there’s at least one citation marker or URL.
+
+CMP-OUT-004 (toxicity/sensitive): very basic regex/heuristic screen (low false positives), configurable.
+
+Action: BLOCK on 002; FIX (auto-insert) for 001; WARN on 003/004.
+
+E) Trading-specific constraints (if payload includes trades)
+
+(These reuse NB2’s schemas so your demo is consistent.)
+
+CMP-TRD-001 (max single-asset weight): max(weight_i) ≤ max_single_asset_weight.
+
+CMP-TRD-002 (min cash): cash_weight ≥ min_cash_weight.
+
+CMP-TRD-003 (prohibited assets): none of trades[].symbol in prohibited_assets.
+
+CMP-TRD-004 (leverage / shorting): sum(weights_long) ≤ 1.0 if no leverage; no quantity < 0 when no_shorting=true.
+
+CMP-TRD-005 (turnover cap): sum(|Δweight|) ≤ max_turnover.
+
+CMP-TRD-006 (lot size / precision): quantities respect min_lot and decimals ≤ max_precision.
+
+Action: all BLOCK with clear reasons and the failing items enumerated.
