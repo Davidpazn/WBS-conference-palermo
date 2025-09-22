@@ -19,12 +19,22 @@ from langsmith import Client as LangSmithClient, traceable
 from langsmith.run_helpers import tracing_context
 
 
+# Module-level flags to track initialization status
+_TELEMETRY_INITIALIZED = False
+_TRACER_INSTANCE = None
+_LANGSMITH_CLIENT_INSTANCE = None
+
 # Environment variables for telemetry
 LANGSMITH_API_KEY = os.getenv("LANGSMITH_API_KEY")
 LANGSMITH_PROJECT = os.getenv("LANGSMITH_PROJECT", "agents-demo")
 SERVICE_NAME = os.getenv("SERVICE_NAME", "hitl-coding-agent")
 SERVICE_VERSION = os.getenv("SERVICE_VERSION", "0.1.0")
 ENVIRONMENT = os.getenv("ENVIRONMENT", "production")  # notebook, development, production
+
+# Feature flags for telemetry components
+ENABLE_OPENTELEMETRY = os.getenv("ENABLE_OPENTELEMETRY", "true").lower() == "true"
+ENABLE_LANGSMITH = os.getenv("ENABLE_LANGSMITH", "true").lower() == "true" and LANGSMITH_API_KEY
+ENABLE_CONSOLE_EXPORTER = os.getenv("ENABLE_CONSOLE_EXPORTER", "false").lower() == "true"
 
 
 # Telemetry configuration constants
@@ -66,70 +76,175 @@ def setup_telemetry(
     service_version: str = SERVICE_VERSION,
     environment: str = ENVIRONMENT,
     langsmith_api_key: Optional[str] = LANGSMITH_API_KEY,
-    langsmith_project: str = LANGSMITH_PROJECT
+    langsmith_project: str = LANGSMITH_PROJECT,
+    force_reinit: bool = False
 ) -> Tuple[trace.Tracer, Optional[LangSmithClient]]:
     """
-    Configure OpenTelemetry + LangSmith tracing.
+    Configure OpenTelemetry + LangSmith tracing with proper initialization guards.
+
+    Args:
+        service_name: Name of the service
+        service_version: Version of the service
+        environment: Environment (production, development, notebook)
+        langsmith_api_key: LangSmith API key
+        langsmith_project: LangSmith project name
+        force_reinit: Force re-initialization even if already initialized
 
     Returns:
         tuple: (tracer, langsmith_client)
     """
+    global _TELEMETRY_INITIALIZED, _TRACER_INSTANCE, _LANGSMITH_CLIENT_INSTANCE
+
+    # Return cached instances if already initialized (unless forced)
+    if _TELEMETRY_INITIALIZED and not force_reinit:
+        if _TRACER_INSTANCE is not None:
+            return _TRACER_INSTANCE, _LANGSMITH_CLIENT_INSTANCE
+
+    # Check if OpenTelemetry is disabled
+    if not ENABLE_OPENTELEMETRY:
+        print("⚠️  OpenTelemetry disabled via ENABLE_OPENTELEMETRY=false")
+        fallback_tracer = trace.get_tracer(__name__)
+        return fallback_tracer, None
+
     try:
-        # Initialize OpenTelemetry Resource
-        resource = Resource.create({
-            "service.name": service_name,
-            "service.version": service_version,
-            "environment": environment
-        })
+        # Check if TracerProvider is already configured
+        current_provider = trace.get_tracer_provider()
+        if not isinstance(current_provider, TracerProvider) or force_reinit:
+            # Initialize OpenTelemetry Resource
+            resource = Resource.create({
+                "service.name": service_name,
+                "service.version": service_version,
+                "environment": environment
+            })
 
-        # Set up tracer provider
-        tracer_provider = TracerProvider(resource=resource)
-        trace.set_tracer_provider(tracer_provider)
+            # Set up new tracer provider
+            tracer_provider = TracerProvider(resource=resource)
+            trace.set_tracer_provider(tracer_provider)
 
-        # Check for OTLP endpoint in environment
-        otlp_endpoint = os.getenv('OTEL_EXPORTER_OTLP_ENDPOINT')
-        if otlp_endpoint:
-            # Configure OTLP exporter
-            otlp_exporter = OTLPSpanExporter(endpoint=otlp_endpoint)
-            tracer_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
-            print(f"✅ OTLP exporter configured for endpoint: {otlp_endpoint}")
-        elif langsmith_api_key:
-            # Configure OTLP exporter for LangSmith
-            otlp_exporter = OTLPSpanExporter(
-                endpoint="https://api.smith.langchain.com/otel",
-                headers={
-                    "x-api-key": langsmith_api_key,
-                    "Langsmith-Project": langsmith_project
-                }
-            )
-            tracer_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
-            print(f"✅ OTLP exporter configured for LangSmith project: {langsmith_project}")
+            # Configure exporters based on environment and flags
+            exporters_configured = False
+
+            # Check for OTLP endpoint in environment
+            otlp_endpoint = os.getenv('OTEL_EXPORTER_OTLP_ENDPOINT')
+            if otlp_endpoint:
+                # Configure OTLP exporter
+                otlp_exporter = OTLPSpanExporter(endpoint=otlp_endpoint)
+                tracer_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
+                print(f"✅ OTLP exporter configured for endpoint: {otlp_endpoint}")
+                exporters_configured = True
+
+            # Configure LangSmith if enabled
+            if ENABLE_LANGSMITH and langsmith_api_key:
+                # Configure OTLP exporter for LangSmith
+                otlp_exporter = OTLPSpanExporter(
+                    endpoint="https://api.smith.langchain.com/otel",
+                    headers={
+                        "x-api-key": langsmith_api_key,
+                        "Langsmith-Project": langsmith_project
+                    }
+                )
+                tracer_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
+                print(f"✅ OTLP exporter configured for LangSmith project: {langsmith_project}")
+                exporters_configured = True
+
+            # Add console exporter if enabled or as fallback
+            if ENABLE_CONSOLE_EXPORTER or not exporters_configured:
+                console_exporter = ConsoleSpanExporter()
+                tracer_provider.add_span_processor(BatchSpanProcessor(console_exporter))
+                if not exporters_configured:
+                    print("⚠️  No OTLP endpoint or LangSmith API key, using console exporter")
+                else:
+                    print("✅ Console exporter enabled")
         else:
-            # Always add console exporter for local debugging/fallback
-            console_exporter = ConsoleSpanExporter()
-            tracer_provider.add_span_processor(BatchSpanProcessor(console_exporter))
-            print("⚠️  No OTLP endpoint or LangSmith API key, using console exporter")
+            # Provider already configured, just get the tracer
+            print("ℹ️  TracerProvider already configured, reusing existing provider")
 
         # Get tracer
         tracer = trace.get_tracer(__name__)
 
-        # Initialize LangSmith client
-        langsmith_client = LangSmithClient(api_key=langsmith_api_key) if langsmith_api_key else None
-        if langsmith_client:
+        # Initialize LangSmith client if enabled
+        langsmith_client = None
+        if ENABLE_LANGSMITH and langsmith_api_key:
+            langsmith_client = LangSmithClient(api_key=langsmith_api_key)
             print(f"✅ LangSmith client initialized")
+        elif not ENABLE_LANGSMITH:
+            print("ℹ️  LangSmith disabled via ENABLE_LANGSMITH=false")
 
         print("✅ OpenTelemetry + LangSmith tracing configured")
 
+        # Cache instances
+        _TRACER_INSTANCE = tracer
+        _LANGSMITH_CLIENT_INSTANCE = langsmith_client
+        _TELEMETRY_INITIALIZED = True
+
         return tracer, langsmith_client
+
     except Exception as e:
         print(f"⚠️  Error setting up telemetry: {e}")
         # Return fallback tracer
         fallback_tracer = trace.get_tracer(__name__)
+        _TRACER_INSTANCE = fallback_tracer
+        _LANGSMITH_CLIENT_INSTANCE = None
         return fallback_tracer, None
 
 
 # Initialize telemetry components
 tracer, langsmith_client = setup_telemetry()
+
+
+def get_telemetry_status() -> dict:
+    """
+    Get current telemetry configuration status.
+
+    Returns:
+        dict: Status of telemetry components
+    """
+    global _TELEMETRY_INITIALIZED, _TRACER_INSTANCE, _LANGSMITH_CLIENT_INSTANCE
+
+    return {
+        "initialized": _TELEMETRY_INITIALIZED,
+        "opentelemetry_enabled": ENABLE_OPENTELEMETRY,
+        "langsmith_enabled": ENABLE_LANGSMITH,
+        "console_exporter_enabled": ENABLE_CONSOLE_EXPORTER,
+        "tracer_configured": _TRACER_INSTANCE is not None,
+        "langsmith_client_configured": _LANGSMITH_CLIENT_INSTANCE is not None,
+        "service_name": SERVICE_NAME,
+        "service_version": SERVICE_VERSION,
+        "environment": ENVIRONMENT,
+        "langsmith_project": LANGSMITH_PROJECT if ENABLE_LANGSMITH else None,
+        "otlp_endpoint": os.getenv('OTEL_EXPORTER_OTLP_ENDPOINT'),
+        "provider_type": type(trace.get_tracer_provider()).__name__
+    }
+
+
+def get_tracer() -> trace.Tracer:
+    """
+    Get the cached tracer instance or create one if needed.
+
+    Returns:
+        trace.Tracer: The configured tracer
+    """
+    global _TRACER_INSTANCE
+
+    if _TRACER_INSTANCE is None:
+        _TRACER_INSTANCE, _ = setup_telemetry()
+
+    return _TRACER_INSTANCE
+
+
+def get_langsmith_client() -> Optional[LangSmithClient]:
+    """
+    Get the cached LangSmith client instance.
+
+    Returns:
+        Optional[LangSmithClient]: The configured client or None
+    """
+    global _LANGSMITH_CLIENT_INSTANCE
+
+    if _LANGSMITH_CLIENT_INSTANCE is None and ENABLE_LANGSMITH and LANGSMITH_API_KEY:
+        _, _LANGSMITH_CLIENT_INSTANCE = setup_telemetry()
+
+    return _LANGSMITH_CLIENT_INSTANCE
 
 
 def set_genai_span_attributes(

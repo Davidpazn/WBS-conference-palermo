@@ -1,0 +1,38 @@
+# Core dependencies extracted from NB1_E2B_coding_agent_v2.ipynb
+
+# E2B sandbox integration
+e2b-code-interpreter>=0.0.10
+
+# OpenAI integration
+openai>=1.108.1
+
+# LangGraph workflow orchestration
+langgraph>=0.2.0
+langgraph-checkpoint>=1.0.0
+
+# LangSmith tracing and evaluation
+langsmith>=0.1.0
+
+# OpenTelemetry tracing
+opentelemetry-api>=1.21.0
+opentelemetry-sdk>=1.21.0
+opentelemetry-exporter-otlp>=1.21.0
+opentelemetry-instrumentation>=0.42b0
+opentelemetry-semantic-conventions>=0.42b0
+
+# Retry logic
+tenacity>=8.2.0
+
+# Environment management
+python-dotenv>=1.0.0
+
+# Data validation
+pydantic>=2.7.0
+
+# FastAPI for REST endpoints (if needed)
+fastapi>=0.104.0
+uvicorn>=0.24.0
+
+# Development and testing
+pytest>=7.0.0
+pytest-asyncio>=0.21.0

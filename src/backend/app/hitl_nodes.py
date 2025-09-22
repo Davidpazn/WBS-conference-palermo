@@ -6,7 +6,10 @@ from opentelemetry import trace
 
 from langgraph.types import interrupt, Command
 from .state import AppState
-from src.infra.telemetry import get_current_span_context
+# Remove dependency on telemetry context function for now
+def get_current_span_context():
+    """Simplified span context - returns None for now"""
+    return None
 
 
 def code_generation_node(state: AppState) -> AppState:
