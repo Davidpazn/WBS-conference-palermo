@@ -205,3 +205,7 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# artifacts generated from E2B sandbox execution of coding agents
+src/notebooks/artifacts/*
+.claude/agents/*.md

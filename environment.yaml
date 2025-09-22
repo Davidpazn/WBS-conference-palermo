@@ -14,7 +14,7 @@ dependencies:
       - qdrant-client==1.15.1
       - mcp[cli]==1.14.1
       - letta==0.11.7
-      - letta-client>=0.1.3
+      - letta-client>=0.1.321
       - e2b-code-interpreter==2.0.0
 
       # Telemetry
@@ -23,6 +23,7 @@ dependencies:
       - opentelemetry-exporter-otlp>=1.30.0
       - opentelemetry-instrumentation==0.51b0
       - opentelemetry-instrumentation-fastapi==0.51b0
+      - opentelemetry-instrumentation-openai>=0.47.0
       - opentelemetry-semantic-conventions==0.51b0
 
       # Minimal API/server bits for the small full-stack app
